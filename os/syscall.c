@@ -92,17 +92,61 @@ uint64 sys_wait(int pid, uint64 va)
 	return wait(pid, code);
 }
 
-uint64 sys_spawn(uint64 va)
+uint64 sys_spawn(char *filename)
 {
-	// TODO: your job is to complete the sys call
-	return -1;
+	struct proc *parent, *child = NULL;
+	char file[MAX_STR_LEN];
+	struct trapframe *tf;
+	int app_id;
+
+	if (!filename)
+		return -1;
+
+	parent = curr_proc();
+	if (copyinstr(parent->pagetable, file, (uint64)filename, MAX_STR_LEN) < 0)
+		return -1;
+
+	app_id = get_id_by_name(file);
+	if (app_id < 0)
+		return -1;
+
+	child = allocproc();
+	if (!child)
+		return -1;
+
+	child->parent = parent;
+	child->priority = parent->priority;
+	child->stride = 0;
+	child->state = RUNNABLE;
+
+	tf = child->trapframe;
+	// trapframe is just a bunch of u64, shallow copy works fine on it
+	*tf = *(parent->trapframe);
+	tf->sp = child->ustack + USTACK_SIZE;
+	tf->epc = BASE_ADDRESS;
+	tf->ra = 0;
+
+	if (loader(app_id, child) < 0) {
+		freeproc(child);
+		return -1;
+	}
+
+	add_task(child);
+
+	return child->pid;
 }
 
-uint64 sys_set_priority(long long prio){
-    // TODO: your job is to complete the sys call
-    return -1;
-}
+uint64 sys_set_priority(long long prio)
+{
+	struct proc *p = curr_proc();
 
+	if (prio < 2 || prio > 0x7fffffffffffffffLL)
+		return -1;
+
+	p->priority = prio;
+
+	return prio;
+}
 
 uint64 sys_sbrk(int n)
 {
@@ -270,7 +314,10 @@ void syscall()
 		ret = sys_wait(args[0], args[1]);
 		break;
 	case SYS_spawn:
-		ret = sys_spawn(args[0]);
+		ret = sys_spawn((char*)args[0]);
+		break;
+	case SYS_setpriority:
+		ret = sys_set_priority((long long)args[0]);
 		break;
 	case SYS_sbrk:
                 ret = sys_sbrk(args[0]);

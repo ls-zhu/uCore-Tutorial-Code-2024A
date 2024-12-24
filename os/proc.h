@@ -23,6 +23,8 @@ typedef struct {
 	int time;
 } TaskInfo;
 
+#define BIG_STRIDE 65536
+
 struct file;
 
 // Saved registers for kernel context switches.
@@ -64,6 +66,8 @@ struct proc {
 	uint64 heap_bottom;
 	TaskInfo ti;
 	int time_start;
+	uint64 stride;
+	uint64 priority;
 };
 
 int cpuid();
@@ -84,5 +88,6 @@ int fdalloc(struct file *);
 void swtch(struct context *, struct context *);
 
 int growproc(int n);
+void freeproc(struct proc *p);
 
 #endif // PROC_H

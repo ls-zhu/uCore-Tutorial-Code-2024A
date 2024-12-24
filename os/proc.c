@@ -47,13 +47,47 @@ int allocpid()
 
 struct proc *fetch_task()
 {
-	int index = pop_queue(&task_queue);
-	if (index < 0) {
-		debugf("No task to fetch\n");
+	int i, index, next, min_index = -1;
+	uint64 pass, min_stride = ~0ULL;
+	struct proc *p, *min_proc = NULL;
+
+	// try to find the task with min stride
+	for (i = task_queue.front; i != task_queue.tail; i = (i + 1) % QUEUE_SIZE) {
+		index = task_queue.data[i];
+		p = &pool[index];
+		if (p->state == RUNNABLE && p->stride < min_stride) {
+			min_index = i;
+			min_stride = p->stride;
+			min_proc = p;
+		}
+	}
+
+	if (!min_proc) {
+		debugf("No runnable task\n");
+
 		return NULL;
 	}
-	debugf("fetch task %d(pid=%d) to task queue\n", index, pool[index].pid);
-	return pool + index;
+
+	/* If we found a valid runnable task, we need to remove it from the task queue,
+	 * this is an imitation of pop_queue. Other than removing the task at the queue
+	 * head, we need to remove the task with min_stride.
+	 * All these are to avoid panic("queue shouldn't be overflow")
+	 */
+	if (min_index >= 0) {
+		for (int i = min_index; i != task_queue.tail; i = (i + 1) % QUEUE_SIZE) {
+			next = (i + 1) % QUEUE_SIZE;
+			task_queue.data[i] = task_queue.data[next];
+		}
+	}
+
+	task_queue.tail = (task_queue.tail - 1 + QUEUE_SIZE) % QUEUE_SIZE;
+	if (task_queue.front == task_queue.tail)
+		 task_queue.empty = 1;
+
+	pass = BIG_STRIDE / min_proc->priority;
+	min_proc->stride += pass;
+
+	return min_proc;
 }
 
 void add_task(struct proc *p)
@@ -91,6 +125,8 @@ found:
 	memset((void *)p->trapframe, 0, TRAP_PAGE_SIZE);
 	p->context.ra = (uint64)usertrapret;
 	p->context.sp = p->kstack + KSTACK_SIZE;
+	p->stride = 0;
+	p->priority = 16;
 	return p;
 }
 
