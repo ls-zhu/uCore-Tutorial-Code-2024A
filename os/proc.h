@@ -8,6 +8,21 @@
 #define NPROC (512)
 #define FD_BUFFER_SIZE (16)
 
+#define MAX_SYSCALL_NUM 500
+
+typedef enum {
+	UnInit,
+	Ready,
+	Running,
+	Exited,
+} TaskStatus;
+
+typedef struct {
+	TaskStatus status;
+	unsigned int syscall_times[MAX_SYSCALL_NUM];
+	int time;
+} TaskInfo;
+
 struct file;
 
 // Saved registers for kernel context switches.
@@ -47,6 +62,8 @@ struct proc {
 	struct file *files[FD_BUFFER_SIZE];
 	uint64 program_brk;
 	uint64 heap_bottom;
+	TaskInfo ti;
+	int time_start;
 };
 
 int cpuid();
