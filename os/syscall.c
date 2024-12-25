@@ -6,6 +6,15 @@
 #include "timer.h"
 #include "trap.h"
 
+struct Stat {
+	uint64 dev;     // 文件所在磁盘驱动号，该实现写死为 0 即可。
+	uint64 ino;     // inode 文件所在 inode 编号
+	uint32 mode;    // 文件类型
+	uint32 nlink;   // 硬链接数量，初始为1
+	uint64 pad[7];  // 无需考虑，为了兼容性设计
+};
+
+
 uint64 console_write(uint64 va, uint64 len)
 {
 	struct proc *p = curr_proc();
@@ -177,23 +186,89 @@ uint64 sys_close(int fd)
 	return 0;
 }
 
-int sys_fstat(int fd, uint64 stat)
+int sys_fstat(int fd, struct Stat *user_st)
 {
-	//TODO: your job is to complete the syscall
-	return -1;
+	struct file *f;
+	struct inode *ip;
+	struct Stat kernel_st;
+
+	if (fd < 0 || fd >= FD_BUFFER_SIZE || (f = curr_proc()->files[fd]) == NULL)
+		return -1;
+
+	ip  = f->ip;
+	ivalid(ip);
+
+	kernel_st.dev = 0; // fixed as 0 per required
+	kernel_st.ino = ip->inum;
+	kernel_st.mode = (ip->type == T_DIR) ? T_DIR : T_FILE;
+	kernel_st.nlink = ip->nlink;
+
+	if (copyout(curr_proc()->pagetable, (uint64)user_st, (char *)&kernel_st, sizeof(struct Stat)) < 0)
+		return -1;
+
+	return 0;
 }
 
-int sys_linkat(int olddirfd, uint64 oldpath, int newdirfd, uint64 newpath,
-	       uint64 flags)
+int sys_linkat(int olddirfd, uint64 oldpath_addr, int newdirfd, uint64 newpath_addr, unsigned int flags)
 {
-	//TODO: your job is to complete the syscall
-	return -1;
+	struct inode *old_inode;
+	char oldpath[MAXPATH], newpath[MAXPATH];
+
+	if (copyinstr(curr_proc()->pagetable, oldpath, oldpath_addr, MAXPATH) < 0)
+		return -1;
+
+	if (copyinstr(curr_proc()->pagetable, newpath, newpath_addr, MAXPATH) < 0)
+		return -1;
+
+	if ((old_inode = namei(oldpath)) == 0)
+		return -1; // file does not exist
+
+	ivalid(old_inode);
+
+	if (dirlookup(root_dir(), newpath, 0) != 0) {
+		iput(old_inode);
+
+		return -1; // File with the same name exists
+	}
+
+	// create a new file for the same inode
+	if (dirlink(root_dir(), newpath, old_inode->inum) < 0) {
+		iput(old_inode);
+		return -1;
+	}
+
+	old_inode->nlink++;
+	iupdate(old_inode);
+
+	// dirlookup invokes iget, so here needs an iput
+	iput(old_inode);
+
+	return 0;
 }
 
-int sys_unlinkat(int dirfd, uint64 name, uint64 flags)
+int sys_unlinkat(int dirfd, uint64 path_addr, unsigned int flags)
 {
-	//TODO: your job is to complete the syscall
-	return -1;
+	char path[MAXPATH];
+	struct inode *inode;
+
+	if (copyinstr(curr_proc()->pagetable, path, path_addr, MAXPATH) < 0)
+		return -1;
+
+	inode = dirlookup(root_dir(), path, 0);
+	if (!inode) // does not need to iput if inode is NULL
+		return -1;
+
+	ivalid(inode);
+
+	if (dirunlink(root_dir(), path) < 0) {
+		iput(inode);
+
+		return -1;
+	}
+
+	iput(inode);
+
+	return 0;
 }
 
 uint64 sys_sbrk(int n)
@@ -368,7 +443,7 @@ void syscall()
 		ret = sys_wait(args[0], args[1]);
 		break;
 	case SYS_fstat:
-		ret = sys_fstat(args[0], args[1]);
+		ret = sys_fstat(args[0], (struct Stat*)args[1]);
 		break;
 	case SYS_linkat:
 		ret = sys_linkat(args[0], args[1], args[2], args[3], args[4]);

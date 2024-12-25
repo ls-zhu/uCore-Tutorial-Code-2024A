@@ -123,6 +123,7 @@ int fileopen(char *path, uint64 omode)
 		iput(ip);
 		return -1;
 	}
+
 	// only support FD_INODE
 	f->type = FD_INODE;
 	f->off = 0;
