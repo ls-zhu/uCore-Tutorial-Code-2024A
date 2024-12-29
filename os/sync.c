@@ -20,12 +20,17 @@ struct mutex *mutex_create(int blocking)
 	return m;
 }
 
-void mutex_lock(struct mutex *m)
+int mutex_lock(struct mutex *m)
 {
+	struct proc *p = curr_proc();
+
+	if (m->locked && p->deadlock_detect_enabled)
+		return -0xdead;
+
 	if (!m->locked) {
 		m->locked = 1;
 		debugf("lock a free mutex");
-		return;
+		return 0;
 	}
 	if (!m->blocking) {
 		// spin mutex will just poll
@@ -34,7 +39,7 @@ void mutex_lock(struct mutex *m)
 			yield();
 		}
 		debugf("lock spin mutex after some trials");
-		return;
+		return 0;
 	}
 	// blocking mutex will wait in the queue
 	struct thread *t = curr_thread();
@@ -45,6 +50,8 @@ void mutex_lock(struct mutex *m)
 	sched();
 	debugf("blocking mutex passed to me");
 	// here lock is released (with locked = 1) and passed to me, so just do nothing
+
+	return 0;
 }
 
 void mutex_unlock(struct mutex *m)
@@ -96,8 +103,13 @@ void semaphore_up(struct semaphore *s)
 	debugf("semaphore up from %d to %d", s->count - 1, s->count);
 }
 
-void semaphore_down(struct semaphore *s)
+int semaphore_down(struct semaphore *s)
 {
+	struct proc *p = curr_proc();
+
+	if (s->count <= 0 && p->deadlock_detect_enabled)
+		return -0xdead;
+
 	s->count--;
 	if (s->count < 0) {
 		// s->count < 0 means need to wait (state=SLEEPING)
@@ -109,6 +121,8 @@ void semaphore_down(struct semaphore *s)
 		debugf("semaphore up to %d and wake up", s->count);
 	}
 	debugf("finish semaphore_down with count = %d", s->count);
+
+	return 0;
 }
 
 struct condvar *condvar_create()

@@ -45,6 +45,7 @@ void proc_init()
 	struct proc *p;
 	for (p = pool; p < &pool[NPROC]; p++) {
 		p->state = P_UNUSED;
+		p->deadlock_detect_enabled = 0;
 		for (int tid = 0; tid < NTHREAD; ++tid) {
 			struct thread *t = &p->threads[tid];
 			t->state = T_UNUSED;

@@ -265,14 +265,17 @@ int sys_mutex_create(int blocking)
 
 int sys_mutex_lock(int mutex_id)
 {
+	int ret;
+
 	if (mutex_id < 0 || mutex_id >= curr_proc()->next_mutex_id) {
 		errorf("Unexpected mutex id %d", mutex_id);
 		return -1;
 	}
 	// LAB5: (4-1) You may want to maintain some variables for detect
 	//       or call your detect algorithm here
-	mutex_lock(&curr_proc()->mutex_pool[mutex_id]);
-	return 0;
+	ret = mutex_lock(&curr_proc()->mutex_pool[mutex_id]);
+
+	return ret;
 }
 
 int sys_mutex_unlock(int mutex_id)
@@ -313,6 +316,8 @@ int sys_semaphore_up(int semaphore_id)
 
 int sys_semaphore_down(int semaphore_id)
 {
+	int ret;
+
 	if (semaphore_id < 0 ||
 	    semaphore_id >= curr_proc()->next_semaphore_id) {
 		errorf("Unexpected semaphore id %d", semaphore_id);
@@ -320,8 +325,9 @@ int sys_semaphore_down(int semaphore_id)
 	}
 	// LAB5: (4-2) You may want to maintain some variables for detect
 	//       or call your detect algorithm here
-	semaphore_down(&curr_proc()->semaphore_pool[semaphore_id]);
-	return 0;
+	ret = semaphore_down(&curr_proc()->semaphore_pool[semaphore_id]);
+
+	return ret;
 }
 
 int sys_condvar_create()
@@ -362,6 +368,13 @@ int sys_condvar_wait(int cond_id, int mutex_id)
 }
 
 // LAB5: (2) you may need to define function enable_deadlock_detect here
+
+int sys_enable_deadlock_detect(uint enable)
+{
+	curr_proc()->deadlock_detect_enabled = enable;
+
+	return 0;
+}
 
 extern char trap_page[];
 
@@ -455,6 +468,9 @@ void syscall()
 		ret = sys_condvar_wait(args[0], args[1]);
 		break;
 	// LAB5: (2) you may need to add case SYS_enable_deadlock_detect here
+	case SYS_enable_deadlock_detect:
+		ret = sys_enable_deadlock_detect((uint)args[0]);
+		break;
 	default:
 		ret = -1;
 		errorf("unknown syscall %d", id);
